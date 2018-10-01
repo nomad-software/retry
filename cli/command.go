@@ -1,10 +1,8 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,10 +24,17 @@ func RunCommand(options Options) bool {
 		cmd = exec.Command(args[0], args[1:]...)
 	}
 
-	forwardOutput(cmd)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 
-	err := cmd.Wait()
+	err := cmd.Start()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, color.RedString(err.Error()))
+		os.Exit(1)
+	}
 
+	err = cmd.Wait()
 	if err == nil {
 		return true
 	}
@@ -44,42 +49,4 @@ func RunCommand(options Options) bool {
 	}
 
 	return false
-}
-
-// ForwardOutput forwards all output from the command to the console.
-func forwardOutput(cmd *exec.Cmd) bool {
-	output := NewOutput()
-	output.Start()
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		output.Stderr <- err.Error()
-		os.Exit(1)
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		output.Stderr <- err.Error()
-		os.Exit(1)
-	}
-
-	err = cmd.Start()
-	if err != nil {
-		output.Stderr <- err.Error()
-		os.Exit(1)
-	}
-
-	go forwardPipe(stdout, output.Stdout)
-	go forwardPipe(stderr, output.Stderr)
-
-	return <-output.Closed
-}
-
-// ForwardPipe forwards output from the specified pipe to the console.
-func forwardPipe(pipe io.ReadCloser, channel chan string) {
-	scanner := bufio.NewScanner(pipe)
-	for scanner.Scan() {
-		channel <- scanner.Text()
-	}
-	close(channel)
 }
